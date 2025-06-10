@@ -2,6 +2,11 @@ Enables audio outputs on OSX for CM6206 Audio Card. By default, although it is f
 
 # Status
 
+My Fixes
++ enables S/PDIF PCM input and output
++ tested with Sequoia 15.5 on M1 and Intel with this cheap 6-in-1 usb audio device: https://www.aliexpress.com/item/1005005965419242.html
+
+
 Fixes 
 + works on x64 platforms
 + works with Catalina 10.15.6

@@ -1,6 +1,7 @@
 /*
  * CM6206 Enabler by Alexander Thomas, 2009/06 - 2011/01
  * mPrinC (Sasha Rudan) 2020/08
+ * iZero79 (Tero Siironen) 2025/06
  *  + fixed code to work even with the error 'in use' (error 2c5)
  * This will activate sound output on some of the cheapest USB 5.1 adaptors
  *   available, more specifically the ones that use the C-Media CM6206 chip.
@@ -20,9 +21,10 @@
  * There's probably also a lot of opportunity to simplify and/or do things
  *   more efficiently.
  *
- * Versions: 1.0  2009/06: initial release	
+ * Versions: 1.0  2009/06: initial release
  *           2.0  2011/01: implemented 'daemon mode'
  *           2.1  2011/02: fixed the program causing a delay when entering sleep
+ *           2.2  2025/06: enables S/PDIF PCM input and output
  *
  * TODO:
  *   - figure out all the commands supported by the CM6206 and make a GUI
@@ -72,7 +74,7 @@
 #include <IOKit/usb/IOUSBLib.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
 
-#define CMVERSION "2.1"
+#define CMVERSION "2.2"
 
 // for debugging
 #define VERBOSE
@@ -251,42 +253,23 @@ int writeCM6206Registers( IOUSBInterfaceInterface183 **intf, UInt8 byte1, UInt8 
 // This sends the actual activation commands
 void initCM6206(IOUSBInterfaceInterface183 **intf)
 {
-    int err = 0;
-    
-    // This should reset the registers
-    if( writeCM6206Registers(intf, 0x00,0x00,0x00) ) {
-    	fprintf(stderr, "Error while resetting registers\n");
-		err = 1;
+    struct {
+        UInt8 lo, hi, reg;
+    } seq[] = {
+        {0x04, 0x20, 0x00},   /* REG0  = 0x2004  – 48 kHz PCM              */
+        {0x00, 0x30, 0x01},   /* REG1  = 0x3000  – PLLBIN & soft-mute en   */
+        {0x00, 0xF8, 0x02},   /* REG2  = 0xF800  – driver on, HP muted     */
+        {0x7F, 0x14, 0x03},   /* REG3  = 0x147F  – enable all outs         */
+        {0x00, 0x30, 0x05}    /* REG5  = 0x3000  – release AD/DA reset     */
+    };
+
+    for (unsigned i = 0; i < sizeof(seq)/sizeof(seq[0]); ++i) {
+        if (writeCM6206Registers(intf, seq[i].lo, seq[i].hi, seq[i].reg))
+            fprintf(stderr, "CM6206: write to reg 0x%02X failed\n", seq[i].reg);
     }
-    
-    // This enables SPDIF, values copied from SniffUSB log (this one was easy)
-    // I'm not sure if the SPDIF outputs surround data, as I don't have the means to test it.
-    if( writeCM6206Registers(intf, 0x00,0x30,0x01) ) {
-    	fprintf(stderr, "Error while attempting to enable SPDIF\n");
-		err = 1;
-    }
-    
-    // This enables sound output. Why on earth it's disabled upon power-on,
-    // nobody knows (except maybe some Taiwanese engineer).
-    // These values were taken from the ALSA USB driver: "Enable line-out driver mode,
-    // set headphone source to front channels, enable stereo mic."
-    // That's for the CM106, however. On the CM6206 they appear to enable everything.
-    if( writeCM6206Registers(intf, 0x04,0x80,0x02) ) {
-    	fprintf(stderr, "Error while attempting to enable analog out\n");
-    	err = 1;
-    }
-    
-    // Extra stuff, taken from the Alsa-user mailinglist.
-    // The above works for me, so I didn't bother testing the following.
-    // It may be completely redundant or make your Mac explode. Try at your own risk.
-    
-    // "Enable DACx2, PLL binary, Soft Mute, and SPDIF-out"
-    //writeCM6206Registers(intf, 0x00,0xb0,0x01);
-    // "Enable all channels and select 48-pin chipset"
-    //writeCM6206Registers(intf, 0x7f,0x00,0x03);
-    
-    if(!err && gVerbose)
-		fprintf(stderr, "Successfully sent CM6206 activation commands!\n");
+
+    if (gVerbose)
+        fprintf(stderr, "CM6206: S/PDIF PCM enabled (48 kHz, 2-ch)\n");
 }
 
 
